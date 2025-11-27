@@ -8,6 +8,8 @@ This image packages a comprehensive suite of Kali Linux penetration testing and 
 
 **What is MCP?** The Model Context Protocol is a standardized protocol that enables AI assistants to interact with external tools and services. This server exposes Kali Linux security tools as MCP tools, allowing AI assistants to help with authorized security testing, vulnerability assessment, and penetration testing tasks.
 
+**Open Source:** This project is open source and welcomes contributions! See the [Contributing](#contributing) section for how you can help improve this project.
+
 ## ⚠️ CRITICAL LEGAL AND ETHICAL WARNINGS
 
 ### AUTHORIZED USE ONLY
@@ -393,11 +395,13 @@ These limits are enforced via Linux `rlimit` and apply to each tool execution in
 
 ### Reporting Issues
 
-If you encounter bugs or have feature requests, please:
-- Include Docker version and system information
-- Provide relevant logs and error messages
-- Describe steps to reproduce the issue
-- Contact the maintainer through appropriate channels
+If you encounter bugs or have feature requests, please open an issue on GitHub with:
+- A clear, descriptive title
+- Detailed description of the issue or feature request
+- Docker version and system information
+- Relevant logs and error messages
+- Steps to reproduce the issue (for bugs)
+- Expected vs. actual behavior
 
 ### Getting Help
 
@@ -405,6 +409,105 @@ For questions or support:
 - Review the troubleshooting section above
 - Check the documentation for your specific use case
 - Ensure you're using the latest version of the image
+
+## Contributing
+
+We welcome contributions from the community! This project is open source, and we appreciate any help you can provide to make it better.
+
+### How to Contribute
+
+There are many ways to contribute to this project:
+
+- 🐛 **Report Bugs:** Open an issue describing the bug with steps to reproduce
+- 💡 **Suggest Features:** Share your ideas for new features or improvements
+- 📝 **Improve Documentation:** Help us make the documentation clearer and more comprehensive
+- 🔧 **Fix Issues:** Submit pull requests to fix bugs or implement features
+- 🧪 **Add Tests:** Help improve test coverage
+- 🔍 **Code Review:** Review open pull requests and provide feedback
+- 🌐 **Add Tools:** Propose new security tools to be integrated into the MCP server
+
+### Getting Started
+
+1. **Fork the Repository:** Click the "Fork" button on GitHub to create your own copy
+2. **Clone Your Fork:** `git clone https://github.com/your-username/kali-mcp-server.git`
+3. **Create a Branch:** `git checkout -b feature/your-feature-name` or `git checkout -b fix/your-bug-fix`
+4. **Make Your Changes:** Implement your feature or fix
+5. **Test Your Changes:** Ensure your changes work correctly and don't break existing functionality
+6. **Commit Your Changes:** Write clear, descriptive commit messages
+7. **Push to Your Fork:** `git push origin feature/your-feature-name`
+8. **Open a Pull Request:** Submit your PR with a clear description of what you changed and why
+
+### Development Setup
+
+To set up a development environment:
+
+```bash
+# Clone the repository
+git clone https://github.com/your-username/kali-mcp-server.git
+cd kali-mcp-server
+
+# Build the Docker image locally
+docker build -t kali-mcp-server:dev .
+
+# Test your changes
+docker run -i --rm \
+  --cap-add=NET_RAW \
+  --cap-add=NET_ADMIN \
+  -e DEBUG_MCP=1 \
+  kali-mcp-server:dev
+```
+
+### Pull Request Guidelines
+
+When submitting a pull request, please:
+
+- ✅ **Keep PRs Focused:** One feature or fix per pull request
+- ✅ **Write Clear Descriptions:** Explain what your PR does and why
+- ✅ **Update Documentation:** If you add features, update the README or relevant docs
+- ✅ **Follow Code Style:** Maintain consistency with existing code style
+- ✅ **Test Thoroughly:** Ensure your changes work and don't introduce regressions
+- ✅ **Reference Issues:** Link to related issues if applicable
+- ✅ **Keep Commits Clean:** Use meaningful commit messages
+
+### Code Style
+
+- Follow Python PEP 8 style guidelines where applicable
+- Use clear, descriptive variable and function names
+- Add comments for complex logic
+- Keep functions focused and maintainable
+- Ensure error handling is appropriate
+
+### What We're Looking For
+
+We particularly welcome contributions that:
+
+- Add new security tools to the MCP server
+- Improve error handling and robustness
+- Enhance documentation and examples
+- Optimize performance and resource usage
+- Add better timeout and resource limit handling
+- Improve tool output parsing and formatting
+- Add tests and improve test coverage
+- Fix bugs and security issues
+
+### Code of Conduct
+
+By participating in this project, you agree to:
+
+- Be respectful and inclusive
+- Focus on constructive feedback
+- Respect different viewpoints and experiences
+- Accept responsibility for your words and actions
+- Remember that this project is for authorized security testing only
+
+### Questions?
+
+If you have questions about contributing, feel free to:
+- Open an issue with the `question` label
+- Review existing issues and pull requests for examples
+- Check the documentation for development guidelines
+
+Thank you for contributing to kali-mcp-server! 🎉
 
 ## Additional Resources
 
