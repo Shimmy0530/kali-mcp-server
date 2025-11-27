@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  kali-mcp-server:
+    build: .
+    image: kali-mcp-server
+    ports:
+      - "8000:8000"
+    container_name: kali-mcp-server
+    restart: unless-stopped
+    # Remove -it flags for non-interactive execution
+    stdin_open: false
+    tty: false
+    # Resource limits to prevent container crashes
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    # Network capabilities for tools like nmap and masscan
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    # Health check - check if MCP server process is running
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "mcp_server.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+

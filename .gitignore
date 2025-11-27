@@ -1,0 +1,86 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+*.log.*
+
+# Test results and reports
+*_test_*.log
+*_followup_*.log
+*_validation_*.log
+*_idor_*.log
+
+# Security assessment reports (may contain sensitive data)
+# Note: Keep reports but ensure they don't contain actual API keys
+# *_Security_Assessment_Report.md
+# *_test_results.md
+
+# Docker
+.dockerignore
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+
+# API keys and secrets (backup files)
+*.key
+*.secret
+*.pem
+*.p12
+*.pfx
+
+# Workspace files
+*.code-workspace
+
+# Website-specific testing folders (private)
+bitcoinpostage.info/
+baltito.com/
+
+# Cursor IDE
+.cursor/
+.cursorignore
+

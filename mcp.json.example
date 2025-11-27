@@ -1,0 +1,22 @@
+{
+    "mcpServers": {
+        "kali-mcp": {
+            "command": "docker",
+            "args": [
+                "run",
+                "-i",
+                "--rm",
+                "-e",
+                "DEBUG_MCP=1",
+                "--cap-add=NET_RAW",
+                "--cap-add=NET_ADMIN",
+                "--memory=4g",
+                "--memory-reservation=1g",
+                "--cpus=4.0",
+                "--cpu-shares=1024",
+                "kali-mcp-server"
+            ]
+        }
+    }
+}
+  
