@@ -84,16 +84,63 @@ def test_docker_image_exists() -> bool:
         print_info("  docker build -t kali-mcp-server .")
         return False
 
+def find_running_container() -> Optional[str]:
+    """Find a running kali-mcp-server container"""
+    # Check for containers with kali-mcp-server image
+    success, output, _ = run_command([
+        "docker", "ps", "--filter", "ancestor=kali-mcp-server",
+        "--format", "{{.Names}}"
+    ], timeout=10)
+    
+    if success and output.strip():
+        containers = [c.strip() for c in output.strip().split('\n') if c.strip()]
+        if containers:
+            return containers[0]
+    
+    # Also check by name patterns (Cursor might use different names)
+    for name_pattern in ["kali-mcp", "mcp-server"]:
+        success, output, _ = run_command([
+            "docker", "ps", "--filter", f"name={name_pattern}",
+            "--format", "{{.Names}}"
+        ], timeout=10)
+        if success and output.strip():
+            containers = [c.strip() for c in output.strip().split('\n') if c.strip()]
+            if containers:
+                return containers[0]
+    
+    return None
+
 def test_container_can_start() -> bool:
     """Test if container can start and run a simple command"""
     print_header("Test 3: Container Can Start")
+    
+    # First, check if a container is already running (e.g., started by Cursor)
+    existing_container = find_running_container()
+    
+    if existing_container:
+        print_info(f"Found existing container: {existing_container}")
+        print_info("Testing command execution in existing container...")
+        
+        # Test by executing a command in the existing container
+        success, output, _ = run_command([
+            "docker", "exec", existing_container,
+            "python3", "-c", "print('Container test successful')"
+        ], timeout=30)
+        
+        if success and "Container test successful" in output:
+            print_success(f"Existing container '{existing_container}' can execute commands")
+            return True
+        else:
+            print_warning(f"Existing container found but command execution failed: {output}")
+            print_info("Will try to start a new test container...")
+    else:
+        print_info("No existing container found. Starting test container...")
     
     # Clean up any existing test container
     run_command(["docker", "stop", "kali-mcp-test"], timeout=5)
     run_command(["docker", "rm", "kali-mcp-test"], timeout=5)
     
     # Start container with a simple command
-    print_info("Starting test container...")
     success, output, _ = run_command([
         "docker", "run", "--rm",
         "--name", "kali-mcp-test",
@@ -195,6 +242,15 @@ def test_tools_available() -> bool:
     """Test if key tools are available in the container"""
     print_header("Test 5: Tools Availability")
     
+    # Check for existing container first
+    existing_container = find_running_container()
+    use_existing = existing_container is not None
+    
+    if use_existing:
+        print_info(f"Using existing container: {existing_container}")
+    else:
+        print_info("No existing container found. Will use temporary containers for testing.")
+    
     tools_to_test = [
         "nmap",
         "nikto",
@@ -206,20 +262,30 @@ def test_tools_available() -> bool:
     
     all_available = True
     for tool in tools_to_test:
-        success, output, _ = run_command([
-            "docker", "run", "--rm",
-            "--cap-add=NET_RAW",
-            "--cap-add=NET_ADMIN",
-            "--memory=2g",
-            "--cpus=2.0",
-            "kali-mcp-server",
-            "which", tool
-        ], timeout=30)
+        if use_existing:
+            # Use exec to run in existing container
+            success, output, _ = run_command([
+                "docker", "exec", existing_container,
+                "which", tool
+            ], timeout=30)
+        else:
+            # Create temporary container
+            success, output, _ = run_command([
+                "docker", "run", "--rm",
+                "--cap-add=NET_RAW",
+                "--cap-add=NET_ADMIN",
+                "--memory=2g",
+                "--cpus=2.0",
+                "kali-mcp-server",
+                "which", tool
+            ], timeout=30)
         
         if success and tool in output:
             print_success(f"{tool} is available")
         else:
             print_error(f"{tool} is not available")
+            if output:
+                print_info(f"  Output: {output.strip()[:100]}")
             all_available = False
     
     return all_available
@@ -231,34 +297,30 @@ def test_simple_command_execution() -> bool:
     # Test with a simple echo command
     test_command = "echo 'MCP server test'"
     
-    # Create a test MCP request for run_command tool
-    tool_request = {
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "tools/call",
-        "params": {
-            "name": "run_command",
-            "arguments": {
-                "command": test_command,
-                "timeout": 10
-            }
-        }
-    }
+    # Check for existing container first
+    existing_container = find_running_container()
     
     print_info(f"Testing command execution: {test_command}")
-    print_warning("Note: This requires a full MCP client implementation")
-    print_info("For now, testing direct container execution...")
     
-    # Test direct execution instead
-    success, output, _ = run_command([
-        "docker", "run", "--rm",
-        "--cap-add=NET_RAW",
-        "--cap-add=NET_ADMIN",
-        "--memory=2g",
-        "--cpus=2.0",
-        "kali-mcp-server",
-        "sh", "-c", test_command
-    ], timeout=30)
+    if existing_container:
+        print_info(f"Using existing container: {existing_container}")
+        # Use exec to run in existing container
+        success, output, _ = run_command([
+            "docker", "exec", existing_container,
+            "sh", "-c", test_command
+        ], timeout=30)
+    else:
+        print_info("No existing container found. Using temporary container...")
+        # Test direct execution instead
+        success, output, _ = run_command([
+            "docker", "run", "--rm",
+            "--cap-add=NET_RAW",
+            "--cap-add=NET_ADMIN",
+            "--memory=2g",
+            "--cpus=2.0",
+            "kali-mcp-server",
+            "sh", "-c", test_command
+        ], timeout=30)
     
     if success and "MCP server test" in output:
         print_success("Simple command execution works")
@@ -271,16 +333,27 @@ def test_nmap_basic() -> bool:
     """Test if nmap can run a basic scan"""
     print_header("Test 7: Nmap Basic Functionality")
     
+    # Check for existing container first
+    existing_container = find_running_container()
+    
     # Test nmap version (safe, no network required)
-    success, output, _ = run_command([
-        "docker", "run", "--rm",
-        "--cap-add=NET_RAW",
-        "--cap-add=NET_ADMIN",
-        "--memory=2g",
-        "--cpus=2.0",
-        "kali-mcp-server",
-        "nmap", "--version"
-    ], timeout=30)
+    if existing_container:
+        print_info(f"Using existing container: {existing_container}")
+        success, output, _ = run_command([
+            "docker", "exec", existing_container,
+            "nmap", "--version"
+        ], timeout=30)
+    else:
+        print_info("No existing container found. Using temporary container...")
+        success, output, _ = run_command([
+            "docker", "run", "--rm",
+            "--cap-add=NET_RAW",
+            "--cap-add=NET_ADMIN",
+            "--memory=2g",
+            "--cpus=2.0",
+            "kali-mcp-server",
+            "nmap", "--version"
+        ], timeout=30)
     
     if success and "Nmap" in output:
         print_success("Nmap is functional")

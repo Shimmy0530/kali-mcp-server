@@ -38,6 +38,37 @@ function Write-Header {
     Write-Host ""
 }
 
+function Find-RunningContainer {
+    # Check for containers with kali-mcp-server image
+    $containers = docker ps --filter "ancestor=kali-mcp-server" --format "{{.Names}}" 2>&1
+    if ($LASTEXITCODE -eq 0 -and $containers) {
+        $containerList = @($containers -split "`n" | Where-Object { $_.Trim() -ne "" })
+        if ($containerList.Count -gt 0) {
+            $firstContainer = $containerList[0].ToString().Trim()
+            if ($firstContainer) {
+                return $firstContainer
+            }
+        }
+    }
+    
+    # Also check by name patterns (Cursor might use different names)
+    $namePatterns = @("kali-mcp", "mcp-server")
+    foreach ($pattern in $namePatterns) {
+        $containers = docker ps --filter "name=$pattern" --format "{{.Names}}" 2>&1
+        if ($LASTEXITCODE -eq 0 -and $containers) {
+            $containerList = @($containers -split "`n" | Where-Object { $_.Trim() -ne "" })
+            if ($containerList.Count -gt 0) {
+                $firstContainer = $containerList[0].ToString().Trim()
+                if ($firstContainer) {
+                    return $firstContainer
+                }
+            }
+        }
+    }
+    
+    return $null
+}
+
 $TestResults = @{}
 
 # Test 1: Docker Availability
@@ -82,26 +113,48 @@ try {
 # Test 3: Container Can Start
 Write-Header "Test 3: Container Can Start"
 try {
-    # Clean up any existing test container
-    docker stop kali-mcp-test 2>$null | Out-Null
-    docker rm kali-mcp-test 2>$null | Out-Null
+    # First, check if a container is already running (e.g., started by Cursor)
+    $existingContainer = Find-RunningContainer
     
-    Write-Info "Starting test container..."
-    $output = docker run --rm `
-        --name kali-mcp-test `
-        --cap-add=NET_RAW `
-        --cap-add=NET_ADMIN `
-        --memory=2g `
-        --cpus=2.0 `
-        kali-mcp-server `
-        python3 -c "print('Container test successful')" 2>&1
-    
-    if ($LASTEXITCODE -eq 0 -and $output -match "Container test successful") {
-        Write-Success "Container can start and execute commands"
-        $TestResults["Container Can Start"] = $true
+    if ($existingContainer) {
+        Write-Info "Found existing container: $existingContainer"
+        Write-Info "Testing command execution in existing container..."
+        
+        $output = docker exec $existingContainer python3 -c "print('Container test successful')" 2>&1
+        
+        if ($LASTEXITCODE -eq 0 -and $output -match "Container test successful") {
+            Write-Success "Existing container '$existingContainer' can execute commands"
+            $TestResults["Container Can Start"] = $true
+        } else {
+            Write-Warning "Existing container found but command execution failed: $output"
+            Write-Info "Will try to start a new test container..."
+        }
     } else {
-        Write-Error "Container failed to start: $output"
-        $TestResults["Container Can Start"] = $false
+        Write-Info "No existing container found. Starting test container..."
+    }
+    
+    # Only try to start new container if existing one didn't work
+    if (-not $TestResults["Container Can Start"]) {
+        # Clean up any existing test container
+        docker stop kali-mcp-test 2>$null | Out-Null
+        docker rm kali-mcp-test 2>$null | Out-Null
+        
+        $output = docker run --rm `
+            --name kali-mcp-test `
+            --cap-add=NET_RAW `
+            --cap-add=NET_ADMIN `
+            --memory=2g `
+            --cpus=2.0 `
+            kali-mcp-server `
+            python3 -c "print('Container test successful')" 2>&1
+        
+        if ($LASTEXITCODE -eq 0 -and $output -match "Container test successful") {
+            Write-Success "Container can start and execute commands"
+            $TestResults["Container Can Start"] = $true
+        } else {
+            Write-Error "Container failed to start: $output"
+            $TestResults["Container Can Start"] = $false
+        }
     }
 } catch {
     Write-Error "Error testing container: $_"
@@ -110,23 +163,39 @@ try {
 
 # Test 4: Tools Availability
 Write-Header "Test 4: Tools Availability"
+$existingContainer = Find-RunningContainer
+$useExisting = $null -ne $existingContainer
+
+if ($useExisting) {
+    Write-Info "Using existing container: $existingContainer"
+} else {
+    Write-Info "No existing container found. Will use temporary containers for testing."
+}
+
 $toolsToTest = @("nmap", "nikto", "sqlmap", "whatweb", "gobuster", "ffuf")
 $allAvailable = $true
 
 foreach ($tool in $toolsToTest) {
     try {
-        $output = docker run --rm `
-            --cap-add=NET_RAW `
-            --cap-add=NET_ADMIN `
-            --memory=2g `
-            --cpus=2.0 `
-            kali-mcp-server `
-            which $tool 2>&1
+        if ($useExisting) {
+            $output = docker exec $existingContainer which $tool 2>&1
+        } else {
+            $output = docker run --rm `
+                --cap-add=NET_RAW `
+                --cap-add=NET_ADMIN `
+                --memory=2g `
+                --cpus=2.0 `
+                kali-mcp-server `
+                which $tool 2>&1
+        }
         
         if ($LASTEXITCODE -eq 0 -and $output -match $tool) {
             Write-Success "$tool is available"
         } else {
             Write-Error "$tool is not available"
+            if ($output) {
+                Write-Info "  Output: $($output.Substring(0, [Math]::Min(100, $output.Length)))"
+            }
             $allAvailable = $false
         }
     } catch {
@@ -141,15 +210,23 @@ $TestResults["Tools Available"] = $allAvailable
 Write-Header "Test 5: Simple Command Execution"
 try {
     $testCommand = "echo 'MCP server test'"
+    $existingContainer = Find-RunningContainer
+    
     Write-Info "Testing command execution: $testCommand"
     
-    $output = docker run --rm `
-        --cap-add=NET_RAW `
-        --cap-add=NET_ADMIN `
-        --memory=2g `
-        --cpus=2.0 `
-        kali-mcp-server `
-        sh -c $testCommand 2>&1
+    if ($existingContainer) {
+        Write-Info "Using existing container: $existingContainer"
+        $output = docker exec $existingContainer sh -c $testCommand 2>&1
+    } else {
+        Write-Info "No existing container found. Using temporary container..."
+        $output = docker run --rm `
+            --cap-add=NET_RAW `
+            --cap-add=NET_ADMIN `
+            --memory=2g `
+            --cpus=2.0 `
+            kali-mcp-server `
+            sh -c $testCommand 2>&1
+    }
     
     if ($LASTEXITCODE -eq 0 -and $output -match "MCP server test") {
         Write-Success "Simple command execution works"
@@ -166,13 +243,21 @@ try {
 # Test 6: Nmap Basic Functionality
 Write-Header "Test 6: Nmap Basic Functionality"
 try {
-    $output = docker run --rm `
-        --cap-add=NET_RAW `
-        --cap-add=NET_ADMIN `
-        --memory=2g `
-        --cpus=2.0 `
-        kali-mcp-server `
-        nmap --version 2>&1
+    $existingContainer = Find-RunningContainer
+    
+    if ($existingContainer) {
+        Write-Info "Using existing container: $existingContainer"
+        $output = docker exec $existingContainer nmap --version 2>&1
+    } else {
+        Write-Info "No existing container found. Using temporary container..."
+        $output = docker run --rm `
+            --cap-add=NET_RAW `
+            --cap-add=NET_ADMIN `
+            --memory=2g `
+            --cpus=2.0 `
+            kali-mcp-server `
+            nmap --version 2>&1
+    }
     
     if ($LASTEXITCODE -eq 0 -and $output -match "Nmap") {
         Write-Success "Nmap is functional"

@@ -37,11 +37,21 @@ The test scripts verify:
 
 1. **Docker Availability** - Checks if Docker is installed and accessible
 2. **Docker Image Existence** - Verifies the `kali-mcp-server` image exists
-3. **Container Can Start** - Tests that containers can be created and run
+3. **Container Can Start** - Tests that containers can be created and run (or uses existing container if already running)
 4. **MCP Server Response** - Verifies the MCP server responds to initialization requests
 5. **Tools Availability** - Checks that key security tools (nmap, nikto, sqlmap, whatweb, gobuster, ffuf) are available
 6. **Simple Command Execution** - Tests basic command execution within the container
 7. **Nmap Basic Functionality** - Verifies nmap can run (version check)
+
+### Smart Container Detection
+
+The test scripts automatically detect if a container is already running (e.g., started by Cursor IDE when using the MCP server). When an existing container is found:
+
+- Tests will use `docker exec` to run commands in the existing container
+- No new containers will be created unnecessarily
+- This allows testing the actual MCP server instance that Cursor is using
+
+If no existing container is found, the scripts will create temporary test containers as needed.
 
 ## Prerequisites
 
@@ -163,8 +173,10 @@ When adding new tests:
 
 ## Notes
 
-- Tests use temporary containers that are automatically cleaned up
-- Tests do not require network access (except for MCP protocol tests)
-- Some tests may take longer on resource-constrained systems
-- All tests are designed to be safe and non-destructive
+- **Existing Container Detection**: Tests automatically detect and use containers already running (e.g., started by Cursor IDE)
+- **Temporary Containers**: If no existing container is found, tests create temporary containers that are automatically cleaned up
+- **Network Access**: Tests do not require network access (except for MCP protocol tests)
+- **Resource Usage**: Some tests may take longer on resource-constrained systems
+- **Safety**: All tests are designed to be safe and non-destructive
+- **Cursor Integration**: When Cursor has started the MCP server container, tests will use that container instead of creating new ones
 
