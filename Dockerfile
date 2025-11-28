@@ -63,7 +63,8 @@ RUN chmod +x /usr/bin/nmap && \
 RUN pip3 install --break-system-packages \
         mcp \
         python-dotenv \
-        uvicorn
+        uvicorn \
+        structlog
 
 # Copy MCP server and entrypoint
 WORKDIR /app

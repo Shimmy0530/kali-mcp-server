@@ -235,10 +235,12 @@ phase_recon() {
     
     local timeout_short=60
     local timeout_med=180
+    local timeout_long=300
     
     if [ "$QUICK_MODE" = true ]; then
         timeout_short=30
         timeout_med=60
+        timeout_long=180
     fi
     
     # Extract base domain for DNS tools
@@ -257,7 +259,7 @@ phase_recon() {
     # DNS enumeration
     run_tool "dnsenum" "recon" \
         "dnsenum $dns_target" \
-        "$timeout_med"
+        "$timeout_long"
     
     run_tool "dnsrecon" "recon" \
         "dnsrecon -d $dns_target" \
@@ -298,16 +300,24 @@ phase_web() {
     
     local timeout_short=180
     local timeout_med=300
+    local timeout_long=360
     
     if [ "$QUICK_MODE" = true ]; then
         timeout_short=120
         timeout_med=180
+        timeout_long=240
+    fi
+    
+    # Nikto - tool max time should be slightly less than script timeout
+    local nikto_maxtime=300
+    if [ "$QUICK_MODE" = true ]; then
+        nikto_maxtime=180
     fi
     
     # Nikto
     run_tool "nikto" "web" \
-        "nikto -h https://$TARGET -maxtime 180" \
-        "$timeout_short"
+        "nikto -h https://$TARGET -maxtime $nikto_maxtime" \
+        "$timeout_long"
     
     # Wapiti
     run_tool "wapiti" "web" \
@@ -321,7 +331,7 @@ phase_web() {
     
     # XSS scanners
     run_tool "xsser" "web" \
-        "xsser -u https://$TARGET" \
+        "xsser -u https://$TARGET -c 100 --Cl" \
         "$timeout_short"
     
     # Commix
@@ -338,9 +348,9 @@ phase_enumeration() {
     log "${BOLD}PHASE 4: Directory & File Discovery${NC}"
     log "${BOLD}============================================================${NC}"
     
-    local timeout=180
+    local timeout=300
     if [ "$QUICK_MODE" = true ]; then
-        timeout=120
+        timeout=180
     fi
     
     # Dirb

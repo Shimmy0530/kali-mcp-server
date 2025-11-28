@@ -660,8 +660,11 @@ def run_hping3(target: str, options: str = "-c 4 -S") -> str:
 def run_xsser(target: str, options: str = "") -> str:
     """
     Execute XSSer XSS vulnerability scanner and exploiter.
+    Uses crawler mode to automatically discover and test XSS vulnerabilities.
     """
-    command = f"xsser -u {target} {options}"
+    # XSSer requires either payload markers (XSS/X1S) or attack modes
+    # Using crawler mode (-c 100 --Cl) to automatically discover and test
+    command = f"xsser -u {target} -c 100 --Cl {options}"
     return run_command(command)
 
 

@@ -294,10 +294,10 @@ class MCPTestRunner:
             'masscan': f'masscan -p1-65535 --rate=1000 {target} {options}',
             
             # Web Application
-            'nikto': f'nikto -h https://{target} -maxtime 180 {options}',
+            'nikto': f'nikto -h https://{target} -maxtime 300 {options}',
             'wapiti': f'wapiti -u https://{target} --scope folder --max-scan-time 180 {options}',
             'sqlmap': f'sqlmap -u https://{target} --batch --crawl=1 --timeout=30 --threads=1 {options}',
-            'xsser': f'xsser -u https://{target} {options}',
+            'xsser': f'xsser -u https://{target} -c 100 --Cl {options}',
             'xssstrike': f'python3 /usr/share/xssstrike/xssstrike.py -u https://{target} {options}',
             'commix': f'commix -u https://{target} --batch {options}',
             'zap_baseline': f'zap-baseline.py -t https://{target} -m 5 {options}',
@@ -352,7 +352,7 @@ Timestamp: {self.timestamp}
         tests = [
             ('whatweb', self.target, 'recon', '', 60),
             ('theharvester', dns_target, 'recon', '', 180),
-            ('dnsenum', dns_target, 'recon', '', 120),
+            ('dnsenum', dns_target, 'recon', '', 300),
             ('dnsrecon', dns_target, 'recon', '', 120),
             ('nmap_quick', self.target, 'recon', '', 120),
         ]
@@ -388,7 +388,7 @@ Timestamp: {self.timestamp}
         self.log("="*60, level='INFO')
         
         tests = [
-            ('nikto', self.target, 'web', '', 240),
+            ('nikto', self.target, 'web', '', 360),
             ('wapiti', self.target, 'web', '', 300),
             ('sqlmap', self.target, 'web', '', 360),
             ('xsser', self.target, 'web', '', 180),
@@ -409,8 +409,8 @@ Timestamp: {self.timestamp}
         self.log("="*60, level='INFO')
         
         tests = [
-            ('dirb', self.target, 'enumeration', '', 180),
-            ('gobuster', self.target, 'enumeration', '', 180),
+            ('dirb', self.target, 'enumeration', '', 300),
+            ('gobuster', self.target, 'enumeration', '', 300),
             ('ffuf', self.target, 'enumeration', '', 180),
         ]
         
