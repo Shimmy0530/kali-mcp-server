@@ -77,11 +77,12 @@ Thumbs.db
 *.code-workspace
 
 # Website-specific testing folders (private)
-bitcoinpostage.info/
-baltito.com/
-btcpostage.com/
+*.com/
+*.info/
 
 # Cursor IDE
 .cursor/
 .cursorignore
 
+fix-git-config.ps1
+rewrite-git-history.ps1
