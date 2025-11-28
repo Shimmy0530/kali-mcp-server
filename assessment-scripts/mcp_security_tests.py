@@ -27,6 +27,7 @@ import sys
 import time
 import subprocess
 import argparse
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
@@ -87,11 +88,15 @@ class MCPTestRunner:
         
         self.timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
-        # Set output directory
+        # Set output directory - automatically create website-specific folder
         if output_dir:
             self.base_dir = Path(output_dir)
         else:
-            self.base_dir = Path.cwd() / 'output'
+            # Create folder named after the website (e.g., example.com/)
+            website_name = self.target.split('/')[0].split(':')[0]  # Get domain from target
+            # Sanitize folder name (remove invalid characters)
+            website_name = re.sub(r'[<>:"/\\|?*]', '_', website_name)
+            self.base_dir = Path.cwd() / website_name
             
         self.scans_dir = self.base_dir / "scans"
         self.reports_dir = self.base_dir / "reports"
@@ -137,24 +142,52 @@ class MCPTestRunner:
     def check_container_running(self) -> Tuple[bool, str]:
         """Check if the MCP container is running"""
         try:
+            # First, try to find container by image name (most reliable)
+            # This works even if Docker assigned an auto-generated name
+            result = subprocess.run(
+                ["docker", "ps", "--filter", "ancestor=kali-mcp-server:latest",
+                 "--format", "{{.Names}}"],
+                capture_output=True, text=True, timeout=10
+            )
+            
+            if result.returncode == 0 and result.stdout.strip():
+                containers = [c.strip() for c in result.stdout.strip().split('\n') if c.strip()]
+                if containers:
+                    self.container_name = containers[0]
+                    return True, f"Container '{self.container_name}' is running"
+            
+            # Also try without :latest tag
+            result = subprocess.run(
+                ["docker", "ps", "--filter", "ancestor=kali-mcp-server",
+                 "--format", "{{.Names}}"],
+                capture_output=True, text=True, timeout=10
+            )
+            
+            if result.returncode == 0 and result.stdout.strip():
+                containers = [c.strip() for c in result.stdout.strip().split('\n') if c.strip()]
+                if containers:
+                    self.container_name = containers[0]
+                    return True, f"Container '{self.container_name}' is running"
+            
+            # Fall back to checking by name patterns
             result = subprocess.run(
                 ["docker", "ps", "--filter", f"name={self.container_name}", 
                  "--format", "{{.Names}}"],
                 capture_output=True, text=True, timeout=10
             )
             
-            if self.container_name in result.stdout:
+            if result.returncode == 0 and self.container_name in result.stdout:
                 return True, f"Container '{self.container_name}' is running"
                 
             # Check for alternative container names
-            alt_names = ["kali-mcp-server-detached", "kali-mcp"]
+            alt_names = ["kali-mcp-server-detached", "kali-mcp", "mcp-server"]
             for alt_name in alt_names:
                 result = subprocess.run(
                     ["docker", "ps", "--filter", f"name={alt_name}", 
                      "--format", "{{.Names}}"],
                     capture_output=True, text=True, timeout=10
                 )
-                if alt_name in result.stdout:
+                if result.returncode == 0 and alt_name in result.stdout:
                     self.container_name = alt_name
                     return True, f"Found container '{alt_name}'"
                     

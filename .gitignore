@@ -79,6 +79,7 @@ Thumbs.db
 # Website-specific testing folders (private)
 bitcoinpostage.info/
 baltito.com/
+btcpostage.com/
 
 # Cursor IDE
 .cursor/

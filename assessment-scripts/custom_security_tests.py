@@ -89,11 +89,15 @@ class SecurityTester:
         
         self.timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
-        # Set output directory
+        # Set output directory - automatically create website-specific folder
         if output_dir:
             self.output_dir = Path(output_dir)
         else:
-            self.output_dir = Path.cwd() / 'output'
+            # Create folder named after the website (e.g., example.com/reports/)
+            website_name = self.hostname or 'unknown'
+            # Sanitize folder name (remove invalid characters)
+            website_name = re.sub(r'[<>:"/\\|?*]', '_', website_name)
+            self.output_dir = Path.cwd() / website_name / 'reports'
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
         # Fast mode for quicker scans

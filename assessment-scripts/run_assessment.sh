@@ -386,6 +386,16 @@ main() {
     # Remove protocol from target if present
     TARGET=$(echo "$TARGET" | sed 's|https\?://||' | sed 's|/$||')
     
+    # Auto-create website-specific folder if OUTPUT_DIR wasn't explicitly set
+    if [ "$OUTPUT_DIR" = "./output" ] || [ -z "$OUTPUT_DIR" ]; then
+        # Extract domain name (remove port if present)
+        WEBSITE_NAME=$(echo "$TARGET" | cut -d':' -f1 | cut -d'/' -f1)
+        # Sanitize folder name (remove invalid characters)
+        WEBSITE_NAME=$(echo "$WEBSITE_NAME" | sed 's/[<>:"/\\|?*]/_/g')
+        OUTPUT_DIR="./${WEBSITE_NAME}"
+        log_info "Auto-creating website-specific output folder: $OUTPUT_DIR"
+    fi
+    
     # Create directories
     mkdir -p "$OUTPUT_DIR/scans"/{network,web,enumeration,recon}
     mkdir -p "$OUTPUT_DIR/reports"
