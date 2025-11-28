@@ -9,20 +9,17 @@ set -e
 # So we only check the environment variable, not TTY status
 if [ "${DETACHED_MODE:-false}" = "true" ]; then
     echo "Running in DETACHED mode (container: kali-mcp-server-detached)" >&2
-    echo "Note: MCP server stdio transport requires active stdin/stdout" >&2
-    echo "This mode is for container management only, not for MCP communication" >&2
+    echo "Starting MCP server in HTTP/SSE mode on port 8000" >&2
+    echo "Accessible at: http://localhost:8001/sse (mapped from container port 8000)" >&2
     echo "" >&2
-    echo "Container is running but MCP server cannot function in this mode." >&2
-    echo "Use mcp.json configuration for actual MCP server usage." >&2
-    echo "" >&2
-    echo "Container will stay running for health checks and monitoring." >&2
     
-    # Keep container alive (for health checks, monitoring, etc.)
-    # In a real scenario, you might run a health check endpoint here
-    while true; do
-        sleep 3600  # Sleep for 1 hour, then check again
-        echo "$(date): Container still running (detached mode)" >&2
-    done
+    # Set environment for SSE mode
+    export MCP_SSE_MODE=true
+    export MCP_PORT=8000
+    export MCP_HOST=0.0.0.0
+    
+    # Run MCP server - it will detect SSE mode from environment
+    exec python3 /app/mcp_server.py
 else
     # In stdio mode, stdout must be clean for MCP JSON protocol
     # Only log to stderr if needed for debugging

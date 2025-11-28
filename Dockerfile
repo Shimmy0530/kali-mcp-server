@@ -64,7 +64,8 @@ RUN pip3 install --break-system-packages \
         mcp \
         python-dotenv \
         uvicorn \
-        structlog
+        structlog \
+        fastapi
 
 # Copy MCP server and entrypoint
 WORKDIR /app

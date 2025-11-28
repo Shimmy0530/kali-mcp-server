@@ -211,9 +211,9 @@ For use with MCP-compatible clients (like Cursor IDE), configure in your `mcp.js
 
 **Note:** Adjust `--memory` and `--cpus` based on your system resources. The above configuration is recommended for systems with 16GB+ RAM.
 
-### Detached Mode (Monitoring Only)
+### Detached Mode (SSE Transport)
 
-For container monitoring and health checks:
+For running the MCP server in detached mode with HTTP/SSE transport:
 
 ```bash
 docker run -d \
@@ -225,7 +225,7 @@ docker run -d \
   kali-mcp-server
 ```
 
-**Note:** Detached mode does not support MCP stdio transport. Use stdio mode for actual MCP communication.
+**Note:** Detached mode uses HTTP/SSE transport (accessible at `http://localhost:8001/sse`) instead of stdio transport. For MCP clients that support SSE transport, you can configure them to use this endpoint. For most MCP clients (like Cursor), stdio mode (via `mcp.json`) is recommended for best performance.
 
 ### Resource-Limited Execution
 
@@ -244,6 +244,50 @@ docker run -i --rm \
 
 **Minimum recommended:** `--memory=2g --cpus=2.0` for basic tools.
 **Recommended:** `--memory=4g --cpus=4.0` for resource-intensive tools (ZAP, Metasploit, etc.).
+
+## Additional Tools and Scripts
+
+### Security Assessment Scripts
+
+This repository includes comprehensive security assessment scripts that work with the MCP server container:
+
+- **Automated Security Testing**: Run full security assessments using multiple testing methodologies
+- **Custom Python Tests**: Application-level security testing without Docker
+- **MCP-Based Tests**: Orchestrate Kali tools via the MCP Docker container
+- **Shell-Based Tests**: Direct Docker exec-based security assessments
+
+For detailed documentation and usage examples, see [`assessment-scripts/README.md`](assessment-scripts/README.md).
+
+**Quick Start:**
+```bash
+# Run full assessment
+./assessment-scripts/run_assessment.sh --target example.com
+
+# Quick mode
+./assessment-scripts/run_assessment.sh --target example.com --quick
+```
+
+### Test Scripts
+
+Test scripts are available to verify the MCP server is working correctly:
+
+- **Cross-platform Python tests**: Comprehensive test suite
+- **Windows PowerShell tests**: Optimized for Windows
+- **Linux/macOS Bash tests**: Unix-optimized tests
+
+For detailed documentation, see [`server-test-scripts/README.md`](server-test-scripts/README.md).
+
+**Quick Start:**
+```bash
+# Python (cross-platform)
+python3 server-test-scripts/test_mcp_server.py
+
+# Bash (Linux/macOS)
+bash server-test-scripts/test_mcp_server.sh
+
+# PowerShell (Windows)
+.\server-test-scripts\test_mcp_server.ps1
+```
 
 ## Security Considerations
 

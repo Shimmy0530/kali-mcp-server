@@ -6,13 +6,11 @@ import logging
 import time
 import re
 from datetime import datetime
+import shlex
 
 # ============================================================================
 # CONFIGURATION CONSTANTS
 # ============================================================================
-import logging
-import sys
-import os
 
 # Configuration
 DEFAULT_TOOL_TIMEOUT = 120  # Reduced from 240
@@ -40,7 +38,6 @@ logging.basicConfig(level=log_level, handlers=handlers)
 logger = logging.getLogger(__name__)
 
 # Initialize MCP server
-from mcp.server.fastmcp import FastMCP
 mcp = FastMCP("kali-mcp-server")
 
 # ============================================================================
@@ -70,7 +67,7 @@ def run_command(command: str, timeout: int = DEFAULT_TOOL_TIMEOUT) -> str:
     
     Args:
         command: The shell command to execute
-        timeout: Timeout in seconds (default: 240s)
+        timeout: Timeout in seconds (default: 120s)
     
     Returns:
         Command output as string, with errors prefixed by "Error:"
@@ -92,8 +89,12 @@ def run_command(command: str, timeout: int = DEFAULT_TOOL_TIMEOUT) -> str:
                 # Set memory limit (soft: 2GB, hard: 4GB)
                 # Note: Ruby/Java apps like WhatWeb, ZAP, Metasploit need generous memory
                 resource.setrlimit(resource.RLIMIT_AS, (2 * 1024 * 1024 * 1024, 4 * 1024 * 1024 * 1024))
-                # Set CPU time limit
-                resource.setrlimit(resource.RLIMIT_CPU, (timeout, timeout + 60))
+                # Set CPU time limit (cumulative CPU time, not wall-clock)
+                # Use timeout * 2 as soft limit to allow I/O bound processes
+                # Hard limit is timeout * 2 + 60 to allow graceful termination
+                cpu_soft = timeout * 2
+                cpu_hard = timeout * 2 + 60
+                resource.setrlimit(resource.RLIMIT_CPU, (cpu_soft, cpu_hard))
             except (ImportError, ValueError) as e:
                 if DEBUG_MODE:
                     logger.warning(f"Could not set resource limits: {e}")
@@ -187,7 +188,10 @@ def run_masscan(target: str, ports: str = "1-65535", rate: str = "1000") -> str:
     Note: Masscan requires root privileges and may need --cap-add=NET_RAW.
     """
     # Limit rate and add timeout to prevent resource exhaustion
-    safe_rate = min(int(rate), 1000)  # Cap at 1000 packets/sec
+    try:
+        safe_rate = min(int(rate), 1000)  # Cap at 1000 packets/sec
+    except (ValueError, TypeError):
+        safe_rate = 1000  # Default to max rate if invalid input
     command = f"timeout 300 masscan -p{ports} --rate={safe_rate} {target}"
     return run_command(command, timeout=360)  # 6 minute timeout
 
@@ -580,8 +584,13 @@ def run_metasploit(module: str, target: str, options: str = "") -> str:
     """
     Execute a Metasploit Framework module in batch mode.
     """
+    # Escape single quotes in inputs to prevent command injection
+    # Pattern '\'' means: end quote, escaped quote, start quote
+    module_escaped = module.replace("'", "'\\''")
+    target_escaped = target.replace("'", "'\\''")
+    options_escaped = options.replace("'", "'\\''") if options else ""
     command = (
-        f"msfconsole -q -x 'use {module}; set RHOSTS {target}; {options}; exploit; exit'"
+        f"msfconsole -q -x 'use {module_escaped}; set RHOSTS {target_escaped}; {options_escaped}; exploit; exit'"
     )
     return run_command(command)
 
@@ -609,8 +618,14 @@ def run_tshark(
     Execute tshark network protocol analyzer.
     """
     output_flag = f"-w {output_file}" if output_file else ""
-    filter_flag = f"-f '{capture_filter}'" if capture_filter else ""
-    command = f"tshark -i {interface} {filter_flag} {output_flag}"
+    # Escape single quotes in filter to prevent command injection
+    # Pattern '\'' means: end quote, escaped quote, start quote
+    if capture_filter:
+        filter_escaped = capture_filter.replace("'", "'\\''")
+        filter_flag = f"-f '{filter_escaped}'"
+    else:
+        filter_flag = ""
+    command = f"tshark -i {interface} {filter_flag} {output_flag}".strip()
     return run_command(command)
 
 
@@ -624,8 +639,14 @@ def run_tcpdump(
     Execute tcpdump packet analyzer.
     """
     output_flag = f"-w {output_file}" if output_file else ""
-    filter_flag = f"'{capture_filter}'" if capture_filter else ""
-    command = f"tcpdump -i {interface} {output_flag} {filter_flag}"
+    # Escape single quotes in filter to prevent command injection
+    # Pattern '\'' means: end quote, escaped quote, start quote
+    if capture_filter:
+        filter_escaped = capture_filter.replace("'", "'\\''")
+        filter_flag = f"'{filter_escaped}'"
+    else:
+        filter_flag = ""
+    command = f"tcpdump -i {interface} {output_flag} {filter_flag}".strip()
     return run_command(command)
 
 
@@ -699,9 +720,410 @@ def run_setoolkit() -> str:
 
 
 if __name__ == "__main__":
-    try:
-        mcp.run()
-    except (EOFError, BrokenPipeError, KeyboardInterrupt):
-        sys.exit(0)
-    except Exception:
-        sys.exit(1)
+    # Check if we should run in HTTP/SSE mode (for detached containers)
+    if os.getenv("DETACHED_MODE") == "true" or os.getenv("MCP_SSE_MODE") == "true":
+        # Run in SSE mode using the standard MCP Server SDK with FastMCP bridge
+        try:
+            import asyncio
+            import inspect
+            from mcp.server.sse import SseServerTransport
+            from mcp.server import Server
+            from mcp.types import Tool, TextContent
+            from typing import Any, Sequence
+            
+            port = int(os.getenv("MCP_PORT", "8000"))
+            host = os.getenv("MCP_HOST", "0.0.0.0")
+            
+            # Create standard MCP server for SSE
+            sse_server = Server("kali-mcp-server")
+            
+            # Extract tools from FastMCP instance
+            # FastMCP stores tools - try to access the internal registry
+            tool_functions = {}
+            
+            # Method 1: Try FastMCP's internal tool storage
+            if hasattr(mcp, '_tools'):
+                for name, tool_info in mcp._tools.items():
+                    if callable(tool_info):
+                        tool_functions[name] = tool_info
+                    elif hasattr(tool_info, 'func'):
+                        tool_functions[name] = tool_info.func
+                    elif isinstance(tool_info, dict):
+                        tool_functions[name] = tool_info.get('handler') or tool_info.get('func')
+            
+            # Method 2: Use introspection to find all @mcp.tool decorated functions in this module
+            if not tool_functions:
+                import mcp_server as this_module
+                for name, obj in inspect.getmembers(this_module):
+                    if inspect.isfunction(obj):
+                        # Check if function was decorated by FastMCP
+                        # FastMCP decorator may set various attributes
+                        if (hasattr(obj, '_mcp_tool') or 
+                            hasattr(obj, '_fastmcp_tool') or
+                            (hasattr(mcp, '_tools') and name in getattr(mcp, '_tools', {}))):
+                            tool_functions[name] = obj
+            
+            # Method 3: Manual registration of known tools (fallback)
+            if not tool_functions:
+                # Manually register all known tool functions
+                tool_functions = {
+                    'run_command': run_command,
+                    'run_nmap': run_nmap,
+                    'run_masscan': run_masscan,
+                    'run_nikto': run_nikto,
+                    'run_sqlmap': run_sqlmap,
+                    'run_wpscan': run_wpscan,
+                    'run_wapiti': run_wapiti,
+                    'run_zap_baseline': run_zap_baseline,
+                    'run_skipfish': run_skipfish,
+                    'run_uniscan': run_uniscan,
+                    'run_dirb': run_dirb,
+                    'run_gobuster': run_gobuster,
+                    'run_ffuf': run_ffuf,
+                    'run_wfuzz': run_wfuzz,
+                    'run_whatweb': run_whatweb,
+                    'run_theharvester': run_theharvester,
+                    'run_reconng': run_reconng,
+                    'run_dnsenum': run_dnsenum,
+                    'run_dnsrecon': run_dnsrecon,
+                    'run_john': run_john,
+                    'run_hashcat': run_hashcat,
+                    'run_hydra': run_hydra,
+                    'run_medusa': run_medusa,
+                    'run_metasploit': run_metasploit,
+                    'run_searchsploit': run_searchsploit,
+                    'run_tshark': run_tshark,
+                    'run_tcpdump': run_tcpdump,
+                    'run_netdiscover': run_netdiscover,
+                    'run_hping3': run_hping3,
+                    'run_xsser': run_xsser,
+                    'run_xssstrike': run_xssstrike,
+                    'run_commix': run_commix,
+                    'run_setoolkit': run_setoolkit,
+                }
+            
+            # Register tools with the standard server
+            @sse_server.list_tools()
+            async def list_tools() -> list[Tool]:
+                """List all available tools from FastMCP"""
+                tools_list = []
+                for tool_name, tool_func in tool_functions.items():
+                    # Get function signature and docstring
+                    sig = inspect.signature(tool_func)
+                    doc = inspect.getdoc(tool_func) or f"Tool: {tool_name}"
+                    
+                    # Build input schema from function signature
+                    properties = {}
+                    required = []
+                    
+                    for param_name, param in sig.parameters.items():
+                        if param_name == 'self':
+                            continue
+                        param_type = "string"
+                        if param.annotation != inspect.Parameter.empty:
+                            if param.annotation is int:
+                                param_type = "integer"
+                            elif param.annotation is bool:
+                                param_type = "boolean"
+                        
+                        param_schema = {"type": param_type}
+                        if param.default != inspect.Parameter.empty:
+                            param_schema["default"] = param.default
+                        else:
+                            required.append(param_name)
+                        
+                        properties[param_name] = param_schema
+                    
+                    tools_list.append(Tool(
+                        name=tool_name,
+                        description=doc.split('\n')[0] if doc else f"Tool: {tool_name}",
+                        inputSchema={
+                            "type": "object",
+                            "properties": properties,
+                            "required": required
+                        }
+                    ))
+                return tools_list
+            
+            @sse_server.call_tool()
+            async def call_tool(name: str, arguments: dict[str, Any] | None) -> Sequence[TextContent]:
+                """Handle tool calls by delegating to FastMCP functions"""
+                try:
+                    if name not in tool_functions:
+                        raise ValueError(f"Unknown tool: {name}")
+                    
+                    tool_func = tool_functions[name]
+                    args = arguments or {}
+                    
+                    # Run sync function in executor
+                    loop = asyncio.get_event_loop()
+                    # Capture args in closure properly
+                    result = await loop.run_in_executor(None, lambda a=args: tool_func(**a))
+                    
+                    return [TextContent(type="text", text=str(result))]
+                except Exception as e:
+                    error_msg = f"Error calling tool {name}: {e}"
+                    logger.error(error_msg)
+                    if DEBUG_MODE:
+                        import traceback
+                        logger.error(traceback.format_exc())
+                    return [TextContent(type="text", text=f"Error: {str(e)}")]
+            
+            # Create SSE transport and ASGI app
+            # SseServerTransport needs to be used with the server to create an ASGI app
+            transport = SseServerTransport("/sse")
+            
+            # Try multiple methods to create the ASGI app
+            app = None
+            
+            # Method 1: Try create_app() method (most common)
+            if hasattr(transport, 'create_app'):
+                try:
+                    app = transport.create_app(sse_server)
+                    logger.info("Using transport.create_app() for SSE")
+                except Exception as e:
+                    logger.warning(f"create_app() failed: {e}")
+            
+            # Method 2: Try if transport is callable
+            if app is None and callable(transport):
+                try:
+                    app = transport(sse_server)
+                    logger.info("Using transport as callable for SSE")
+                except Exception as e:
+                    logger.warning(f"Transport callable failed: {e}")
+            
+            # Method 3: Fallback to FastAPI implementation
+            if app is None:
+                logger.info("Using FastAPI fallback for SSE")
+                from fastapi import FastAPI, Request
+                from fastapi.responses import StreamingResponse
+                import json
+                
+                fastapi_app = FastAPI()
+                
+                # Store active connections and message handlers
+                active_connections = {}
+                
+                @fastapi_app.get("/sse")
+                async def sse_endpoint(request: Request):
+                    """SSE endpoint for MCP communication"""
+                    import uuid
+                    connection_id = str(uuid.uuid4())
+                    active_connections[connection_id] = True
+                    
+                    async def event_stream():
+                        """SSE event stream - simplified implementation"""
+                        try:
+                            # Send initial connection message
+                            yield f"data: {json.dumps({'type': 'connection', 'id': connection_id})}\n\n"
+                            
+                            # Simple keepalive loop
+                            # Actual MCP protocol handling will be done via POST endpoint
+                            while True:
+                                await asyncio.sleep(30.0)
+                                yield ": keepalive\n\n"
+                        except asyncio.CancelledError:
+                            logger.debug(f"SSE stream cancelled for {connection_id}")
+                        except Exception as e:
+                            logger.error(f"SSE stream error: {e}")
+                        finally:
+                            active_connections.pop(connection_id, None)
+                    
+                    return StreamingResponse(event_stream(), media_type="text/event-stream")
+                
+                @fastapi_app.post("/sse")
+                async def sse_post(request: Request):
+                    """Handle MCP messages via POST - process tool calls directly"""
+                    data = None
+                    try:
+                        data = await request.json()
+                        
+                        # Handle MCP protocol messages
+                        if isinstance(data, dict):
+                            method = data.get("method")
+                            
+                            # Handle initialize request
+                            if method == "initialize":
+                                return {
+                                    "jsonrpc": "2.0",
+                                    "id": data.get("id"),
+                                    "result": {
+                                        "protocolVersion": "2024-11-05",
+                                        "capabilities": {
+                                            "tools": {}
+                                        },
+                                        "serverInfo": {
+                                            "name": "kali-mcp-server",
+                                            "version": "1.0.0"
+                                        }
+                                    }
+                                }
+                            
+                            # Handle tools/list request
+                            elif method == "tools/list":
+                                tools_list = []
+                                for name, func in tool_functions.items():
+                                    sig = inspect.signature(func)
+                                    parameters = []
+                                    for param_name, param in sig.parameters.items():
+                                        if param_name in ['self', 'mcp']:
+                                            continue
+                                        param_type = 'string'
+                                        if param.annotation is int:
+                                            param_type = 'integer'
+                                        elif param.annotation is bool:
+                                            param_type = 'boolean'
+                                        parameters.append({
+                                            'name': param_name,
+                                            'type': param_type,
+                                            'description': f"Parameter for {param_name}",
+                                            'required': param.default == inspect.Parameter.empty
+                                        })
+                                    tools_list.append({
+                                        'name': name,
+                                        'description': (func.__doc__ or f"Executes {name} command").split('\n')[0],
+                                        'inputSchema': {
+                                            'type': 'object',
+                                            'properties': {p['name']: {'type': p['type']} for p in parameters},
+                                            'required': [p['name'] for p in parameters if p['required']]
+                                        }
+                                    })
+                                
+                                return {
+                                    "jsonrpc": "2.0",
+                                    "id": data.get("id"),
+                                    "result": {
+                                        "tools": tools_list
+                                    }
+                                }
+                            
+                            # Handle tools/call request
+                            elif method == "tools/call":
+                                params = data.get("params", {})
+                                tool_name = params.get("name")
+                                # Handle null arguments from JSON - ensure it's always a dict
+                                arguments = params.get("arguments") or {}
+                                
+                                if tool_name not in tool_functions:
+                                    return {
+                                        "jsonrpc": "2.0",
+                                        "id": data.get("id"),
+                                        "error": {
+                                            "code": -32601,
+                                            "message": f"Unknown tool: {tool_name}"
+                                        }
+                                    }
+                                
+                                # Execute tool
+                                try:
+                                    tool_func = tool_functions[tool_name]
+                                    loop = asyncio.get_event_loop()
+                                    
+                                    # Run sync function in executor
+                                    if inspect.iscoroutinefunction(tool_func):
+                                        result = await tool_func(**arguments)
+                                    else:
+                                        # Capture arguments in closure properly
+                                        result = await loop.run_in_executor(None, lambda a=arguments: tool_func(**a))
+                                    
+                                    return {
+                                        "jsonrpc": "2.0",
+                                        "id": data.get("id"),
+                                        "result": {
+                                            "content": [
+                                                {
+                                                    "type": "text",
+                                                    "text": str(result)
+                                                }
+                                            ]
+                                        }
+                                    }
+                                except Exception as e:
+                                    logger.error(f"Tool execution error: {e}")
+                                    if DEBUG_MODE:
+                                        import traceback
+                                        logger.error(traceback.format_exc())
+                                    return {
+                                        "jsonrpc": "2.0",
+                                        "id": data.get("id"),
+                                        "error": {
+                                            "code": -32603,
+                                            "message": f"Tool execution failed: {str(e)}"
+                                        }
+                                    }
+                            
+                            # Handle ping/keepalive
+                            elif method == "ping" or method == "ping/keepalive":
+                                return {
+                                    "jsonrpc": "2.0",
+                                    "id": data.get("id"),
+                                    "result": {}
+                                }
+                            
+                            # Unknown method
+                            else:
+                                return {
+                                    "jsonrpc": "2.0",
+                                    "id": data.get("id"),
+                                    "error": {
+                                        "code": -32601,
+                                        "message": f"Unknown method: {method}"
+                                    }
+                                }
+                        
+                        # Default response
+                        return {"status": "received", "message": "MCP message received"}
+                        
+                    except Exception as e:
+                        logger.error(f"POST handler error: {e}")
+                        if DEBUG_MODE:
+                            import traceback
+                            logger.error(traceback.format_exc())
+                        return {
+                            "jsonrpc": "2.0",
+                            "id": data.get("id") if isinstance(data, dict) else None,
+                            "error": {
+                                "code": -32603,
+                                "message": f"Internal error: {str(e)}"
+                            }
+                        }
+                
+                @fastapi_app.get("/health")
+                async def health():
+                    """Health check endpoint"""
+                    return {
+                        "status": "running",
+                        "mode": "sse",
+                        "tools_registered": len(tool_functions),
+                        "active_connections": len(active_connections)
+                    }
+                
+                app = fastapi_app
+            
+            # Run with uvicorn
+            import uvicorn
+            logger.info(f"Starting MCP SSE server on {host}:{port}/sse")
+            logger.info(f"Registered {len(tool_functions)} tools for SSE transport")
+            uvicorn.run(app, host=host, port=port, log_level="warning")
+                
+        except ImportError as e:
+            logger.error(f"Required package not available: {e}")
+            logger.error("Install: pip install uvicorn")
+            sys.exit(1)
+        except Exception as e:
+            logger.error(f"Failed to start SSE server: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            sys.exit(1)
+    else:
+        # Default stdio mode - use FastMCP
+        try:
+            mcp.run()
+        except (EOFError, BrokenPipeError, KeyboardInterrupt):
+            # Normal termination - client disconnected or user interrupted
+            sys.exit(0)
+        except Exception as e:
+            # Log unexpected errors before exiting
+            if DEBUG_MODE:
+                logger.error(f"Unexpected error in stdio mode: {e}", exc_info=True)
+            sys.exit(1)

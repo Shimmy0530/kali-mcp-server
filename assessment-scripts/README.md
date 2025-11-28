@@ -141,9 +141,9 @@ Orchestrates Kali security tools via the MCP Docker container.
 
 **Phases:**
 1. **Recon**: whatweb, theharvester, dnsenum, dnsrecon, nmap (quick)
-2. **Network**: Full nmap scan, masscan
+2. **Network**: Full nmap scan
 3. **Web**: nikto, wapiti, sqlmap, xsser, commix
-4. **Enumeration**: dirb, gobuster, ffuf, wfuzz
+4. **Enumeration**: dirb, gobuster, ffuf
 
 **Options:**
 ```
