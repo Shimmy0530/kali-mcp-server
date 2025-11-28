@@ -86,3 +86,4 @@ Thumbs.db
 
 fix-git-config.ps1
 rewrite-git-history.ps1
+remove-private-folders-from-history.ps1
