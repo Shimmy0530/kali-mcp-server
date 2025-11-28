@@ -1,0 +1,34 @@
+{
+    "target": "example.com",
+    "container": "kali-mcp-server",
+    "timeout": 300,
+    "rate_limit": 0.5,
+    "max_workers": 5,
+    "quick_mode": false,
+    "output_dir": "./output",
+    "phases": ["recon", "network", "web", "enumeration"],
+    "custom_tests": {
+        "enabled": true,
+        "tests": [
+            "http_methods",
+            "security_headers",
+            "ssl_tls",
+            "cors",
+            "cookies",
+            "sql_injection",
+            "xss",
+            "directory_traversal",
+            "sensitive_files",
+            "authentication",
+            "rate_limiting"
+        ]
+    },
+    "mcp_tests": {
+        "enabled": true,
+        "recon_tools": ["whatweb", "theharvester", "dnsenum", "dnsrecon", "nmap_quick"],
+        "network_tools": ["nmap", "masscan"],
+        "web_tools": ["nikto", "wapiti", "sqlmap", "xsser", "commix"],
+        "enumeration_tools": ["dirb", "gobuster", "ffuf", "wfuzz"]
+    }
+}
+

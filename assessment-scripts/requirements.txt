@@ -1,0 +1,9 @@
+# Security Assessment Scripts - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# HTTP requests library
+requests>=2.28.0
+
+# Disable SSL warnings during testing
+urllib3>=1.26.0
+
